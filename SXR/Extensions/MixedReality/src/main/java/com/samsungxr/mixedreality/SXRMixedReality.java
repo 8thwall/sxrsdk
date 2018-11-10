@@ -24,8 +24,11 @@ import com.samsungxr.SXRPicker;
 import com.samsungxr.SXRScene;
 import com.samsungxr.SXRNode;
 import com.samsungxr.SystemPropertyUtil;
+import com.samsungxr.mixedreality.c8.C8Session;
+/*
 import com.samsungxr.mixedreality.arcore.ARCoreSession;
 import com.samsungxr.mixedreality.CVLibrary.CVLibrarySession;
+*/
 
 import org.joml.Vector3f;
 
@@ -99,6 +102,8 @@ public class SXRMixedReality implements IMixedReality
         String prop = SystemPropertyUtil.getSystemPropertyString("debug.samsungxr.hmt");
         boolean hasCVLib = "AR-DROP-IN2".equals(prop);
 
+        mSession = new C8Session(scene, enableCloudAnchor);
+        /*
         if (arPlatform == null)
         {
             arPlatform = hasCVLib ? "ar-drop-in2" : "arcore";
@@ -111,6 +116,7 @@ public class SXRMixedReality implements IMixedReality
         {
             mSession = new CVLibrarySession(scene, enableCloudAnchor);
         }
+        */
         mState = SessionState.ON_PAUSE;
     }
 
