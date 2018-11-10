@@ -294,6 +294,11 @@ public class C8Session extends MRCommon {
                 IPlaneEvents.class,
                 "onStartPlaneDetection",
                 this);
+
+        gvrContext.getEventManager().sendEvent(this,
+                IPlaneEvents.class,
+                "onPlaneDetected",
+                mGroundPlane);
     }
 
     public class C8Handler implements SXRDrawFrameListener {
