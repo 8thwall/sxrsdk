@@ -78,7 +78,7 @@ import java.util.List;
 import java.util.Map;
 
 
-public class ARCoreSession extends MRCommon {
+public class C8Session extends MRCommon {
     private static float AR2VR_SCALE = 100.0f;
 
     private Session mSession;
@@ -89,7 +89,7 @@ public class ARCoreSession extends MRCommon {
     private SXRNode mARPassThroughObject;
     private Frame mLastARFrame;
     private Frame arFrame;
-    private ARCoreHandler mARCoreHandler;
+    private C8Handler mC8Handler;
     private boolean mEnableCloudAnchor;
     private Vector2f mScreenToCamera = new Vector2f(1, 1);
 
@@ -100,16 +100,16 @@ public class ARCoreSession extends MRCommon {
 
     private float mScreenDepth;
 
-    private ARCoreHelper mArCoreHelper;
+    private C8Helper mArCoreHelper;
 
     private final Map<Anchor, CloudAnchorCallback> pendingAnchors = new HashMap<>();
 
-    public ARCoreSession(SXRScene scene, boolean enableCloudAnchor) {
+    public C8Session(SXRScene scene, boolean enableCloudAnchor) {
         super(scene.getSXRContext());
         mSession = null;
         mLastARFrame = null;
         mVRScene = scene;
-        mArCoreHelper = new ARCoreHelper(scene.getSXRContext(), this);
+        mArCoreHelper = new C8Helper(scene.getSXRContext(), this);
         mEnableCloudAnchor = enableCloudAnchor;
     }
 
@@ -129,7 +129,7 @@ public class ARCoreSession extends MRCommon {
 
         if (mSession == null) {
 
-            if (!checkARCoreAndCamera()) {
+            if (!checkC8AndCamera()) {
                 return;
             }
 
@@ -159,7 +159,7 @@ public class ARCoreSession extends MRCommon {
             @Override
             public void run() {
                 try {
-                    onInitARCoreSession(mSXRContext);
+                    onInitC8Session(mSXRContext);
                 } catch (CameraNotAvailableException e) {
                     e.printStackTrace();
                 }
@@ -176,7 +176,7 @@ public class ARCoreSession extends MRCommon {
         }
     }
 
-    private boolean checkARCoreAndCamera() {
+    private boolean checkC8AndCamera() {
         Activity activity = mSXRContext.getApplication().getActivity();
         Exception exception = null;
         String message = null;
@@ -189,7 +189,7 @@ public class ARCoreSession extends MRCommon {
                     break;
             }
 
-            // ARCore requires camera permissions to operate. If we did not yet obtain runtime
+            // C8 requires camera permissions to operate. If we did not yet obtain runtime
             // permission on Android M and above, now is a good time to ask the user for it.
             if (!CameraPermissionHelper.hasCameraPermission(activity)) {
                 CameraPermissionHelper.requestCameraPermission(activity);
@@ -199,10 +199,10 @@ public class ARCoreSession extends MRCommon {
             mSession = new Session(/* context= */ activity);
         } catch (UnavailableArcoreNotInstalledException
                 | UnavailableUserDeclinedInstallationException e) {
-            message = "Please install ARCore";
+            message = "Please install C8";
             exception = e;
         } catch (UnavailableApkTooOldException e) {
-            message = "Please update ARCore";
+            message = "Please update C8";
             exception = e;
         } catch (UnavailableSdkTooOldException e) {
             message = "Please update this app";
@@ -232,7 +232,7 @@ public class ARCoreSession extends MRCommon {
         showSnackbarMessage("Searching for surfaces...", false);
     }
 
-    private void onInitARCoreSession(SXRContext gvrContext) throws CameraNotAvailableException {
+    private void onInitC8Session(SXRContext gvrContext) throws CameraNotAvailableException {
         SXRTexture passThroughTexture = new SXRExternalTexture(gvrContext);
 
         mSession.setCameraTextureName(passThroughTexture.getId());
@@ -277,8 +277,8 @@ public class ARCoreSession extends MRCommon {
         mVRScene.getMainCameraRig().addChildObject(mARPassThroughObject);
 
         /* AR main loop */
-        mARCoreHandler = new ARCoreHandler();
-        gvrContext.registerDrawFrameListener(mARCoreHandler);
+        mC8Handler = new C8Handler();
+        gvrContext.registerDrawFrameListener(mC8Handler);
         syncARCamToVRCam(mLastARFrame.getCamera(), cameraRig);
         gvrContext.getEventManager().sendEvent(this,
                 IPlaneEvents.class,
@@ -286,7 +286,7 @@ public class ARCoreSession extends MRCommon {
                 this);
     }
 
-    public class ARCoreHandler implements SXRDrawFrameListener {
+    public class C8Handler implements SXRDrawFrameListener {
         @Override
         public void onDrawFrame(float v) {
             try {
@@ -304,7 +304,7 @@ public class ARCoreSession extends MRCommon {
             Camera arCamera = arFrame.getCamera();
 
             if (arFrame.getTimestamp() == mLastARFrame.getTimestamp()) {
-                // FIXME: ARCore works at 30fps.
+                // FIXME: C8 works at 30fps.
                 return;
             }
 
@@ -378,7 +378,7 @@ public class ARCoreSession extends MRCommon {
         cameraRig.getHeadTransform().setRotation(1, 0, 0, 0);
         cameraRig.setCameraRigType(SXRCameraRig.SXRCameraRigType.Freeze.ID);
 
-        android.util.Log.d(TAG, "ARCore configured to: passthrough[w: "
+        android.util.Log.d(TAG, "C8 configured to: passthrough[w: "
                 + quadWidth + ", h: " + quadHeight +", z: " + quadDistance
                 + "], cam fov: " +vrFov + ", aspect ratio: " + aspectRatio);
         mScreenToCamera.x = quadWidth / mScreenToCamera.x;    // map [0, ScreenSize] to [-Display, +Display]
@@ -428,12 +428,12 @@ public class ARCoreSession extends MRCommon {
         convertMatrixPoseToVector(arPose, translation, rotation);
 
         Anchor arAnchor = mSession.createAnchor(new Pose(translation, rotation));
-        mArCoreHelper.updateAnchorPose((ARCoreAnchor) anchor, arAnchor);
+        mArCoreHelper.updateAnchorPose((C8Anchor) anchor, arAnchor);
     }
 
     @Override
     protected void onRemoveAnchor(SXRAnchor anchor) {
-        mArCoreHelper.removeAnchor((ARCoreAnchor) anchor);
+        mArCoreHelper.removeAnchor((C8Anchor) anchor);
     }
 
     /**
@@ -442,7 +442,7 @@ public class ARCoreSession extends MRCommon {
      */
     @Override
     synchronized protected void onHostAnchor(SXRAnchor anchor, CloudAnchorCallback cb) {
-        Anchor newAnchor = mSession.hostCloudAnchor(((ARCoreAnchor) anchor).getAnchorAR());
+        Anchor newAnchor = mSession.hostCloudAnchor(((C8Anchor) anchor).getAnchorAR());
         pendingAnchors.put(newAnchor, cb);
     }
 
