@@ -77,6 +77,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.the8thwall.reality.app.xr.android.XREngine;
 
 public class C8Session extends MRCommon {
     private static float AR2VR_SCALE = 100.0f;
@@ -92,6 +93,7 @@ public class C8Session extends MRCommon {
     private C8Handler mC8Handler;
     private boolean mEnableCloudAnchor;
     private Vector2f mScreenToCamera = new Vector2f(1, 1);
+    public static XREngine engine = null;
 
     /* From AR to SXR space matrices */
     private float[] mSXRCamMatrix = new float[16];
