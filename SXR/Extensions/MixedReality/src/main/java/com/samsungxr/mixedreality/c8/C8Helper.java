@@ -199,7 +199,7 @@ public class C8Helper
     }
 
     public C8Plane createPlane(Plane plane) {
-        C8Plane arCorePlane = new C8Plane(mGvrContext, plane);
+        C8Plane arCorePlane = new C8Plane(mGvrContext, 1, 1);
         mArPlanes.put(plane, arCorePlane);
         return arCorePlane;
     }

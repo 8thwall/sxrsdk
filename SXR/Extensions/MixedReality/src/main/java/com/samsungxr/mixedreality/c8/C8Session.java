@@ -95,6 +95,8 @@ public class C8Session extends MRCommon {
     private Vector2f mScreenToCamera = new Vector2f(1, 1);
     public static XREngine engine = null;
 
+    private C8Plane mGroundPlane;
+
     /* From AR to SXR space matrices */
     private float[] mSXRCamMatrix = new float[16];
 
@@ -113,6 +115,12 @@ public class C8Session extends MRCommon {
         mVRScene = scene;
         mArCoreHelper = new C8Helper(scene.getSXRContext(), this);
         mEnableCloudAnchor = enableCloudAnchor;
+        mGroundPlane = new C8Plane(scene.getSXRContext(), 1, 1);
+
+        mSXRContext.getEventManager().sendEvent(this,
+                IPlaneEvents.class,
+                "onPlaneDetected",
+                mGroundPlane);
     }
 
     @Override
@@ -402,7 +410,9 @@ public class C8Session extends MRCommon {
 
     @Override
     protected ArrayList<SXRPlane> onGetAllPlanes() {
-        return mArCoreHelper.getAllPlanes();
+        ArrayList<SXRPlane> planes = new ArrayList<SXRPlane>();
+        planes.add(mGroundPlane);
+        return planes;
     }
 
     @Override
