@@ -5,8 +5,8 @@ if (hasProperty('only_daydream') && (only_daydream == "true")) {
     include ':backend_monoscopic'
 } else {
     include ':backend_monoscopic'
-    include ':backend_daydream'
-    include ':backend_oculus'
+//    include ':backend_daydream'
+//    include ':backend_oculus'
 }
 
 if(file("../../../extra_settings.gradle").exists()) {
