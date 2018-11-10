@@ -28,25 +28,18 @@ import com.samsungxr.mixedreality.SXRTrackingState;
 
 import java.nio.FloatBuffer;
 
-
 class C8Plane extends SXRPlane {
-    private Plane mARPlane;
     private C8Pose mPose;
+    private float mWidth;
+    private float mHeight;
 
-    protected C8Plane(SXRContext gvrContext, Plane plane) {
+    protected C8Plane(SXRContext gvrContext, float width, float height) {
         super(gvrContext);
         mPose = new C8Pose();
-        mARPlane = plane;
+        mWidth = width;
+        mHeight = height;
 
-        if (mARPlane.getType() == Plane.Type.HORIZONTAL_DOWNWARD_FACING) {
-            mPlaneType = Type.HORIZONTAL_DOWNWARD_FACING;
-        }
-        else if (mARPlane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) {
-            mPlaneType = Type.HORIZONTAL_UPWARD_FACING;
-        }
-        else {
-            mPlaneType = Type.VERTICAL;
-        }
+        mPlaneType = Type.HORIZONTAL_UPWARD_FACING;
     }
 
     /**
@@ -77,22 +70,25 @@ class C8Plane extends SXRPlane {
         if(poseOut.length != 16 ){
             throw new IllegalArgumentException("Array must be 16");
         }
-        mARPlane.getCenterPose().toMatrix(poseOut, 0);
+        // Does nothing
     }
 
     @Override
     public float getWidth() {
-        return mARPlane.getExtentX();
+        return mWidth;
     }
 
     @Override
     public float getHeight() {
-        return mARPlane.getExtentZ();
+        return mHeight;
     }
 
     @Override
     public FloatBuffer getPolygon() {
-        return mARPlane.getPolygon();
+        FloatBuffer polygon = FloatBuffer.allocate(8);
+        float[] polygonPoints = {-mWidth, -mHeight, mWidth, -mHeight, mWidth, mHeight, -mWidth, mHeight};
+        polygon.put(polygonPoints);
+        return polygon;
     }
 
     @Override
@@ -102,17 +98,7 @@ class C8Plane extends SXRPlane {
 
     @Override
     public boolean isPoseInPolygon(float[] pose) {
-
-        float[] translation = new float[3];
-        float[] rotation = new float[4];
-        float[] arPose;
-
-        arPose = pose.clone();
-
-        C8Session.gvr2ar(arPose);
-        C8Session.convertMatrixPoseToVector(arPose, translation, rotation);
-
-        return mARPlane.isPoseInPolygon(new Pose(translation, rotation));
+        return true;
     }
 
     /**
@@ -124,13 +110,7 @@ class C8Plane extends SXRPlane {
         SXRNode owner = getOwnerObject();
         if (isEnabled() && (owner != null) && owner.isEnabled())
         {
-            float w = getWidth();
-            float h = getHeight();
-            mPose.update(mARPlane.getCenterPose(), scale);
-            Matrix4f m = new Matrix4f();
-            m.set(mPose.getPoseMatrix());
-            m.scaleLocal(w * 0.95f, h * 0.95f, 1.0f);
-            owner.getTransform().setModelMatrix(m);
+            owner.getTransform().setPosition(0,0,0);
         }
     }
 
@@ -140,7 +120,6 @@ class C8Plane extends SXRPlane {
      * @param scale Scale from AR to SXRf world
      */
     private void convertFromARtoVRSpace(float scale) {
-        mPose.update(mARPlane.getCenterPose(), scale);
-        getTransform().setModelMatrix(mPose.getPoseMatrix());
+        update(1);
     }
 }
