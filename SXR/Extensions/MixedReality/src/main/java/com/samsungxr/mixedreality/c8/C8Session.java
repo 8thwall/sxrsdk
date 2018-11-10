@@ -29,9 +29,11 @@ import com.google.ar.core.Camera;
 import com.google.ar.core.Config;
 import com.google.ar.core.Frame;
 import com.google.ar.core.HitResult;
+import com.google.ar.core.LightEstimate;
 import com.google.ar.core.Plane;
 import com.google.ar.core.Pose;
 import com.google.ar.core.Session;
+import com.google.ar.core.Trackable;
 import com.google.ar.core.TrackingState;
 import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.exceptions.UnavailableApkTooOldException;
@@ -46,6 +48,7 @@ import com.samsungxr.SXRExternalTexture;
 import com.samsungxr.SXRMaterial;
 import com.samsungxr.SXRMesh;
 import com.samsungxr.SXRMeshCollider;
+import com.samsungxr.SXRNode;
 import com.samsungxr.SXRPerspectiveCamera;
 import com.samsungxr.SXRPicker;
 import com.samsungxr.SXRRenderData;
@@ -58,10 +61,16 @@ import com.samsungxr.mixedreality.SXRMarker;
 import com.samsungxr.mixedreality.SXRHitResult;
 import com.samsungxr.mixedreality.SXRLightEstimate;
 import com.samsungxr.mixedreality.SXRPlane;
+import com.samsungxr.mixedreality.SXRTrackingState;
 import com.samsungxr.mixedreality.IAnchorEvents;
+import com.samsungxr.mixedreality.IMarkerEvents;
+import com.samsungxr.mixedreality.IMixedReality;
 import com.samsungxr.mixedreality.IPlaneEvents;
 import com.samsungxr.mixedreality.MRCommon;
 import com.samsungxr.utility.Log;
+
+import org.capnproto.MessageBuilder;
+
 import org.joml.Math;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -78,6 +87,13 @@ import java.util.List;
 import java.util.Map;
 
 import com.the8thwall.reality.app.xr.android.XREngine;
+import com.the8thwall.reality.engine.api.Reality.CoordinateSystemConfiguration;
+import com.the8thwall.reality.engine.api.Reality.RealityResponse;
+import com.the8thwall.reality.engine.api.Reality.XRAppEnvironment;
+import com.the8thwall.reality.engine.api.Reality.XRConfiguration;
+import com.the8thwall.reality.engine.api.Reality.XREnvironment;
+
+
 
 public class C8Session extends MRCommon {
     private static float AR2VR_SCALE = 100.0f;
@@ -93,7 +109,16 @@ public class C8Session extends MRCommon {
     private C8Handler mC8Handler;
     private boolean mEnableCloudAnchor;
     private Vector2f mScreenToCamera = new Vector2f(1, 1);
-    public static XREngine engine = null;
+
+    private SXRContext mGvrContext;
+    private Map<Plane, C8Plane> mArPlanes;
+    private Map<AugmentedImage, C8Marker> mArAugmentedImages;
+    private List<C8Anchor> mArAnchors;
+
+    private Camera mCamera;// C8 camera
+
+    private XREngine mXr;
+
 
     private C8Plane mGroundPlane;
 
@@ -104,8 +129,6 @@ public class C8Session extends MRCommon {
 
     private float mScreenDepth;
 
-    private C8Helper mArCoreHelper;
-
     private final Map<Anchor, CloudAnchorCallback> pendingAnchors = new HashMap<>();
 
     public C8Session(SXRScene scene, boolean enableCloudAnchor) {
@@ -113,7 +136,6 @@ public class C8Session extends MRCommon {
         mSession = null;
         mLastARFrame = null;
         mVRScene = scene;
-        mArCoreHelper = new C8Helper(scene.getSXRContext(), this);
         mEnableCloudAnchor = enableCloudAnchor;
         mGroundPlane = new C8Plane(scene.getSXRContext(), 1, 1);
 
@@ -121,6 +143,11 @@ public class C8Session extends MRCommon {
                 IPlaneEvents.class,
                 "onPlaneDetected",
                 mGroundPlane);
+
+        mGvrContext = scene.getSXRContext();
+        mArPlanes = new HashMap<>();
+        mArAugmentedImages = new HashMap<>();
+        mArAnchors = new ArrayList<>();
     }
 
     @Override
@@ -136,6 +163,28 @@ public class C8Session extends MRCommon {
     protected void onResume() {
 
         Log.d(TAG, "onResumeAR");
+
+        if (mXr == null) {
+          XREngine.create(mSXRContext.getContext(), 1 /* OPENGL */);
+          mXr = XREngine.getInstance();
+
+          XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
+          config.getCoordinateConfiguration().getOrigin().getPosition().setY(1.8f);
+          config.getCoordinateConfiguration().setAxes(CoordinateSystemConfiguration.CoordinateAxes.X_LEFT_Y_UP_Z_FORWARD);
+          config.getCoordinateConfiguration().setScale(1.8f);
+          mXr.configure(config.asReader());
+          /*
+            XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
+            config.getMask().setCamera(true);
+            config.getMask().setFeatureSet(true);
+            config.getGraphicsIntrinsics().setTextureWidth(width);
+            config.getGraphicsIntrinsics().setTextureHeight(height);
+            config.getGraphicsIntrinsics().setNearClip(0.03f);
+            config.getGraphicsIntrinsics().setFarClip(1000.0f);
+            config.getGraphicsIntrinsics().setDigitalZoomVertical(1.0f);
+            config.getGraphicsIntrinsics().setDigitalZoomHorizontal(1.0f);
+          */
+        }
 
         if (mSession == null) {
 
@@ -318,7 +367,7 @@ public class C8Session extends MRCommon {
                 return;
             }
 
-            mArCoreHelper.setCamera(arCamera);
+            setCamera(arCamera);
 
             syncARCamToVRCam(arCamera, mVRScene.getMainCameraRig());
 
@@ -326,11 +375,11 @@ public class C8Session extends MRCommon {
                 return;
             }
 
-            mArCoreHelper.updatePlanes(mSession.getAllTrackables(Plane.class), AR2VR_SCALE);
+            updatePlanes(mSession.getAllTrackables(Plane.class), AR2VR_SCALE);
 
-            mArCoreHelper.updateAugmentedImages(arFrame.getUpdatedTrackables(AugmentedImage.class));
+            updateAugmentedImages(arFrame.getUpdatedTrackables(AugmentedImage.class));
 
-            mArCoreHelper.updateAnchors(AR2VR_SCALE);
+            updateAnchors(AR2VR_SCALE);
 
             updateCloudAnchors(arFrame.getUpdatedAnchors());
 
@@ -426,7 +475,7 @@ public class C8Session extends MRCommon {
         convertMatrixPoseToVector(arPose, translation, rotation);
 
         Anchor anchor = mSession.createAnchor(new Pose(translation, rotation));
-        return mArCoreHelper.createAnchor(anchor, AR2VR_SCALE);
+        return createAnchor(anchor, AR2VR_SCALE);
     }
 
     @Override
@@ -440,12 +489,12 @@ public class C8Session extends MRCommon {
         convertMatrixPoseToVector(arPose, translation, rotation);
 
         Anchor arAnchor = mSession.createAnchor(new Pose(translation, rotation));
-        mArCoreHelper.updateAnchorPose((C8Anchor) anchor, arAnchor);
+        updateAnchorPose((C8Anchor) anchor, arAnchor);
     }
 
     @Override
     protected void onRemoveAnchor(SXRAnchor anchor) {
-        mArCoreHelper.removeAnchor((C8Anchor) anchor);
+        removeAnchor((C8Anchor) anchor);
     }
 
     /**
@@ -477,7 +526,7 @@ public class C8Session extends MRCommon {
                 if (isReturnableState(cloudState)) {
                     CloudAnchorCallback cb = pendingAnchors.get(anchor);
                     pendingAnchors.remove(anchor);
-                    SXRAnchor newAnchor = mArCoreHelper.createAnchor(anchor, AR2VR_SCALE);
+                    SXRAnchor newAnchor = createAnchor(anchor, AR2VR_SCALE);
                     cb.onCloudUpdate(newAnchor);
                 }
             }
@@ -511,7 +560,7 @@ public class C8Session extends MRCommon {
         Vector2f tapPosition = convertToDisplayGeometrySpace(collision.hitLocation[0], collision.hitLocation[1]);
         List<HitResult> hitResult = arFrame.hitTest(tapPosition.x, tapPosition.y);
 
-        return mArCoreHelper.hitTest(hitResult, AR2VR_SCALE);
+        return hitTest(hitResult, AR2VR_SCALE);
     }
 
     @Override
@@ -519,12 +568,12 @@ public class C8Session extends MRCommon {
         x *= mScreenToCamera.x;
         y *= mScreenToCamera.y;
         List<HitResult> hitResult = arFrame.hitTest(x, y);
-        return mArCoreHelper.hitTest(hitResult, AR2VR_SCALE);
+        return hitTest(hitResult, AR2VR_SCALE);
     }
 
     @Override
     protected SXRLightEstimate onGetLightEstimate() {
-        return mArCoreHelper.getLightEstimate(arFrame.getLightEstimate());
+        return getLightEstimate(arFrame.getLightEstimate());
     }
 
     @Override
@@ -547,7 +596,7 @@ public class C8Session extends MRCommon {
 
     @Override
     protected ArrayList<SXRMarker> onGetAllMarkers() {
-        return mArCoreHelper.getAllMarkers();
+        return getAllMarkers();
     }
 
     @Override
@@ -600,5 +649,269 @@ public class C8Session extends MRCommon {
         rotation[1] = quaternionRotation.y;
         rotation[2] = quaternionRotation.z;
         rotation[3] = quaternionRotation.w;
+    }
+
+    public void setCamera(Camera camera) {
+        mCamera = camera;
+    }
+
+    public Camera getCamera() {
+        return mCamera;
+    }
+
+    public void updatePlanes(Collection<Plane> allPlanes, float scale) {
+
+        // Don't update planes (or notify) when the plane listener is empty, i.e., there is
+        // no listener registered.
+        C8Plane arCorePlane;
+
+        for (Plane plane: allPlanes) {
+            if (plane.getTrackingState() != TrackingState.TRACKING
+                    || mArPlanes.containsKey(plane)) {
+                continue;
+            }
+
+            arCorePlane = createPlane(plane);
+            // FIXME: New planes are updated two times
+            arCorePlane.update(scale);
+            notifyPlaneDetectionListeners(arCorePlane);
+        }
+
+        for (Plane plane: mArPlanes.keySet()) {
+            arCorePlane = mArPlanes.get(plane);
+
+            if (plane.getTrackingState() == TrackingState.TRACKING &&
+                    arCorePlane.getTrackingState() != SXRTrackingState.TRACKING) {
+                arCorePlane.setTrackingState(SXRTrackingState.TRACKING);
+                notifyPlaneStateChangeListeners(arCorePlane, SXRTrackingState.TRACKING);
+            }
+            else if (plane.getTrackingState() == TrackingState.PAUSED &&
+                    arCorePlane.getTrackingState() != SXRTrackingState.PAUSED) {
+                arCorePlane.setTrackingState(SXRTrackingState.PAUSED);
+                notifyPlaneStateChangeListeners(arCorePlane, SXRTrackingState.PAUSED);
+            }
+            else if (plane.getTrackingState() == TrackingState.STOPPED &&
+                    arCorePlane.getTrackingState() != SXRTrackingState.STOPPED) {
+                arCorePlane.setTrackingState(SXRTrackingState.STOPPED);
+                notifyPlaneStateChangeListeners(arCorePlane, SXRTrackingState.STOPPED);
+            }
+
+            if (plane.getSubsumedBy() != null && arCorePlane.getParentPlane() == null) {
+                arCorePlane.setParentPlane(mArPlanes.get(plane.getSubsumedBy()));
+                notifyMergedPlane(arCorePlane, arCorePlane.getParentPlane());
+            }
+
+            arCorePlane.update(scale);
+        }
+    }
+
+    public void updateAugmentedImages(Collection<AugmentedImage> allAugmentedImages){
+        C8Marker arCoreMarker;
+
+        for (AugmentedImage augmentedImage: allAugmentedImages) {
+            if (augmentedImage.getTrackingState() != TrackingState.TRACKING
+                || mArAugmentedImages.containsKey(augmentedImage)) {
+                continue;
+            }
+
+            arCoreMarker = createMarker(augmentedImage);
+            notifyMarkerDetectionListeners(arCoreMarker);
+
+            mArAugmentedImages.put(augmentedImage, arCoreMarker);
+        }
+
+        for (AugmentedImage augmentedImage: mArAugmentedImages.keySet()) {
+            arCoreMarker = mArAugmentedImages.get(augmentedImage);
+
+            if (augmentedImage.getTrackingState() == TrackingState.TRACKING &&
+                    arCoreMarker.getTrackingState() != SXRTrackingState.TRACKING) {
+                arCoreMarker.setTrackingState(SXRTrackingState.TRACKING);
+                notifyMarkerStateChangeListeners(arCoreMarker, SXRTrackingState.TRACKING);
+            }
+            else if (augmentedImage.getTrackingState() == TrackingState.PAUSED &&
+                    arCoreMarker.getTrackingState() != SXRTrackingState.PAUSED) {
+                arCoreMarker.setTrackingState(SXRTrackingState.PAUSED);
+                notifyMarkerStateChangeListeners(arCoreMarker, SXRTrackingState.PAUSED);
+            }
+            else if (augmentedImage.getTrackingState() == TrackingState.STOPPED &&
+                    arCoreMarker.getTrackingState() != SXRTrackingState.STOPPED) {
+                arCoreMarker.setTrackingState(SXRTrackingState.STOPPED);
+                notifyMarkerStateChangeListeners(arCoreMarker, SXRTrackingState.STOPPED);
+            }
+        }
+    }
+
+    public void updateAnchors(float scale) {
+        for (C8Anchor anchor: mArAnchors) {
+            Anchor arAnchor = anchor.getAnchorAR();
+
+            if (arAnchor.getTrackingState() == TrackingState.TRACKING &&
+                    anchor.getTrackingState() != SXRTrackingState.TRACKING) {
+                anchor.setTrackingState(SXRTrackingState.TRACKING);
+                notifyAnchorStateChangeListeners(anchor, SXRTrackingState.TRACKING);
+            }
+            else if (arAnchor.getTrackingState() == TrackingState.PAUSED &&
+                    anchor.getTrackingState() != SXRTrackingState.PAUSED) {
+                anchor.setTrackingState(SXRTrackingState.PAUSED);
+                notifyAnchorStateChangeListeners(anchor, SXRTrackingState.PAUSED);
+            }
+            else if (arAnchor.getTrackingState() == TrackingState.STOPPED &&
+                    anchor.getTrackingState() != SXRTrackingState.STOPPED) {
+                anchor.setTrackingState(SXRTrackingState.STOPPED);
+                notifyAnchorStateChangeListeners(anchor, SXRTrackingState.STOPPED);
+            }
+
+            anchor.update(scale);
+        }
+    }
+
+    public ArrayList<SXRPlane> getAllPlanes() {
+        ArrayList<SXRPlane> allPlanes = new ArrayList<>();
+
+        for (Plane plane: mArPlanes.keySet()) {
+            allPlanes.add(mArPlanes.get(plane));
+        }
+
+        return allPlanes;
+    }
+
+    public ArrayList<SXRMarker> getAllMarkers() {
+        ArrayList<SXRMarker> allAugmentedImages = new ArrayList<>();
+
+        for (AugmentedImage augmentedImage: mArAugmentedImages.keySet()) {
+            allAugmentedImages.add(mArAugmentedImages.get(augmentedImage));
+        }
+
+        return allAugmentedImages;
+    }
+
+    public C8Plane createPlane(Plane plane) {
+        C8Plane arCorePlane = new C8Plane(mGvrContext, 1, 1);
+        mArPlanes.put(plane, arCorePlane);
+        return arCorePlane;
+    }
+
+    public C8Marker createMarker(AugmentedImage augmentedImage) {
+        C8Marker arCoreMarker = new C8Marker(augmentedImage);
+        return arCoreMarker;
+    }
+
+    public SXRAnchor createAnchor(Anchor arAnchor, float scale) {
+        C8Anchor arCoreAnchor = new C8Anchor(mGvrContext);
+        arCoreAnchor.setAnchorAR(arAnchor);
+        mArAnchors.add(arCoreAnchor);
+        arCoreAnchor.update(scale);
+        return arCoreAnchor;
+    }
+
+    public void updateAnchorPose(C8Anchor anchor, Anchor arAnchor) {
+        if (anchor.getAnchorAR() != null) {
+            anchor.getAnchorAR().detach();
+        }
+        anchor.setAnchorAR(arAnchor);
+    }
+
+    public void removeAnchor(C8Anchor anchor) {
+        anchor.getAnchorAR().detach();
+        mArAnchors.remove(anchor);
+        SXRNode anchorNode = anchor.getOwnerObject();
+        SXRNode anchorParent = anchorNode.getParent();
+        anchorParent.removeChildObject(anchorNode);
+    }
+
+    public SXRHitResult hitTest(List<HitResult> hitResult, float scale) {
+        for (HitResult hit : hitResult) {
+            // Check if any plane was hit, and if it was hit inside the plane polygon
+            Trackable trackable = hit.getTrackable();
+            // Creates an anchor if a plane or an oriented point was hit.
+            if ((trackable instanceof Plane
+                    && ((Plane) trackable).isPoseInPolygon(hit.getHitPose()))
+                    && ((Plane) trackable).getSubsumedBy() == null) {
+                SXRHitResult gvrHitResult = new SXRHitResult();
+                float[] hitPose = new float[16];
+
+                hit.getHitPose().toMatrix(hitPose, 0);
+                // Convert the value from C8 to SXRf and set the pose
+                ar2gvr(hitPose, scale);
+                gvrHitResult.setPose(hitPose);
+                // TODO: this distance is using C8 values, change it to use SXRf instead
+                gvrHitResult.setDistance(hit.getDistance());
+                gvrHitResult.setPlane(mArPlanes.get(trackable));
+
+                return gvrHitResult;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Converts from AR world space to SXRf world space.
+     */
+    private void ar2gvr(float[] poseMatrix, float scale) {
+        // Real world scale
+        Matrix.scaleM(poseMatrix, 0, scale, scale, scale);
+        poseMatrix[12] = poseMatrix[12] * scale;
+        poseMatrix[13] = poseMatrix[13] * scale;
+        poseMatrix[14] = poseMatrix[14] * scale;
+    }
+
+    public SXRLightEstimate getLightEstimate(LightEstimate lightEstimate) {
+        C8LightEstimate arCoreLightEstimate = new C8LightEstimate();
+        SXRLightEstimate.SXRLightEstimateState state;
+
+        arCoreLightEstimate.setPixelIntensity(lightEstimate.getPixelIntensity());
+        state = (lightEstimate.getState() == LightEstimate.State.VALID) ?
+                SXRLightEstimate.SXRLightEstimateState.VALID :
+                SXRLightEstimate.SXRLightEstimateState.NOT_VALID;
+        arCoreLightEstimate.setState(state);
+
+        return arCoreLightEstimate;
+    }
+
+    private void notifyPlaneDetectionListeners(SXRPlane plane) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IPlaneEvents.class,
+                "onPlaneDetected",
+                plane);
+    }
+
+    private void notifyPlaneStateChangeListeners(SXRPlane plane, SXRTrackingState trackingState) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IPlaneEvents.class,
+                "onPlaneStateChange",
+                plane,
+                trackingState);
+    }
+
+    private void notifyMergedPlane(SXRPlane childPlane, SXRPlane parentPlane) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IPlaneEvents.class,
+                "onPlaneMerging",
+                childPlane,
+                parentPlane);
+    }
+
+    private void notifyAnchorStateChangeListeners(SXRAnchor anchor, SXRTrackingState trackingState) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IAnchorEvents.class,
+                "onAnchorStateChange",
+                anchor,
+                trackingState);
+    }
+
+    private void notifyMarkerDetectionListeners(SXRMarker image) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IMarkerEvents.class,
+                "onMarkerDetected",
+                image);
+    }
+
+    private void notifyMarkerStateChangeListeners(SXRMarker image, SXRTrackingState trackingState) {
+        mGvrContext.getEventManager().sendEvent(this,
+                IMarkerEvents.class,
+                "onMarkerStateChange",
+                image,
+                trackingState);
     }
 }
