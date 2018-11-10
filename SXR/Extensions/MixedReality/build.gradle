@@ -10,7 +10,7 @@ repositories {
         url "http://google.bintray.com/googlevr"
     }
     flatDir {
-        dirs '../../sxr-libs'
+        dirs '../../sxr-libs', '../../../../code8/bazel-bin/apps/client/exploratory/headsets/android'
     }
 }
 
@@ -43,8 +43,10 @@ dependencies {
         implementation(name: 'sxrsdk-debug', ext: 'aar')
     }
 
+    implementation(name: 'xr8', ext: 'aar')
+
     implementation "org.joml:joml-android:${jomlVersion}"
-    implementation "com.google.ar:core:${arcoreVersion}"
+    //implementation "com.google.ar:core:${arcoreVersion}"
     implementation 'com.android.support:support-v4:27.0.2'
 }
 
