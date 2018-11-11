@@ -170,9 +170,9 @@ public class C8Session extends MRCommon {
           xrAppEnv_ = xr_.getXRAppEnvironmentReader();
 
           XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
-          config.getCoordinateConfiguration().getOrigin().getPosition().setY(1.8f);
+          config.getCoordinateConfiguration().getOrigin().getPosition().setY(1.65f);
           config.getCoordinateConfiguration().setAxes(CoordinateSystemConfiguration.CoordinateAxes.X_LEFT_Y_UP_Z_FORWARD);
-          config.getCoordinateConfiguration().setScale(1.8f);
+          config.getCoordinateConfiguration().setScale(1.65f);
           xr_.configure(config.asReader());
         }
 
