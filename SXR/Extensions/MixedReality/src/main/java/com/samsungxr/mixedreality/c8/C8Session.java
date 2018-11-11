@@ -98,6 +98,8 @@ import com.the8thwall.reality.engine.api.Reality.XREnvironment;
 public class C8Session extends MRCommon {
   static { System.loadLibrary("xr8"); }
 
+    public static final String TAG = "8thWall";
+
     private static float AR2VR_SCALE = 100.0f;
 
     private Session mSession;
@@ -171,17 +173,6 @@ public class C8Session extends MRCommon {
           config.getCoordinateConfiguration().getOrigin().getPosition().setY(1.8f);
           config.getCoordinateConfiguration().setAxes(CoordinateSystemConfiguration.CoordinateAxes.X_LEFT_Y_UP_Z_FORWARD);
           config.getCoordinateConfiguration().setScale(1.8f);
-          xr_.configure(config.asReader());
-          config = new MessageBuilder().getRoot(XRConfiguration.factory);
-          /*
-          config.getMask().setFeatureSet(true);
-          config.getGraphicsIntrinsics().setTextureWidth(width);
-          config.getGraphicsIntrinsics().setTextureHeight(height);
-          config.getGraphicsIntrinsics().setNearClip(0.03f);
-          config.getGraphicsIntrinsics().setFarClip(1000.0f);
-          config.getGraphicsIntrinsics().setDigitalZoomVertical(1.0f);
-          config.getGraphicsIntrinsics().setDigitalZoomHorizontal(1.0f);
-          */
           xr_.configure(config.asReader());
         }
 
@@ -349,15 +340,14 @@ public class C8Session extends MRCommon {
         /*
         syncARCamToVRCam(mLastARFrame.getCamera(), cameraRig);
         */
+
         gvrContext.getEventManager().sendEvent(this,
                 IPlaneEvents.class,
                 "onStartPlaneDetection",
                 this);
 
-        gvrContext.getEventManager().sendEvent(this,
-                IPlaneEvents.class,
-                "onPlaneDetected",
-                mGroundPlane);
+        notifyPlaneDetectionListeners(mGroundPlane);
+        notifyPlaneStateChangeListeners(mGroundPlane, SXRTrackingState.TRACKING);
     }
 
     public class C8Handler implements SXRDrawFrameListener {
@@ -482,6 +472,10 @@ public class C8Session extends MRCommon {
         mSXRCamMatrix[14] = pz;
 
         mSXRCamMatrix[15] = 1.0f;
+
+        Log.d(TAG,
+            String.format("Setting main camera to (qw: %f, qx: %f, qy: %f, qz: %f); (%f, %f, %f)",
+                w_, x_, y_, z_, px, py, pz));
 
         /*
         arCamera.getDisplayOrientedPose().toMatrix(mSXRCamMatrix, 0);
