@@ -422,9 +422,9 @@ public class C8Session extends MRCommon {
         float y_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getY();
         float z_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getZ();
 
-        float px = r.getXRResponse().getCamera().getExtrinsic().getRotation().getX();
-        float py = r.getXRResponse().getCamera().getExtrinsic().getRotation().getY();
-        float pz = r.getXRResponse().getCamera().getExtrinsic().getRotation().getZ();
+        float px = r.getXRResponse().getCamera().getExtrinsic().getPosition().getX();
+        float py = r.getXRResponse().getCamera().getExtrinsic().getPosition().getY();
+        float pz = r.getXRResponse().getCamera().getExtrinsic().getPosition().getZ();
 
         float x = mSXRCamMatrix[12];
         float y = mSXRCamMatrix[13];
