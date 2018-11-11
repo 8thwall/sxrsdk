@@ -96,6 +96,8 @@ import com.the8thwall.reality.engine.api.Reality.XREnvironment;
 
 
 public class C8Session extends MRCommon {
+  static { System.loadLibrary("xr8"); }
+
     private static float AR2VR_SCALE = 100.0f;
 
     private Session mSession;
@@ -115,9 +117,9 @@ public class C8Session extends MRCommon {
     private Map<AugmentedImage, C8Marker> mArAugmentedImages;
     private List<C8Anchor> mArAnchors;
 
-    private Camera mCamera;// C8 camera
-
-    private XREngine mXr;
+    private XREngine xr_;
+    private long realityMicros_ = 0;
+    private XRAppEnvironment.Reader xrAppEnv_;
 
 
     private C8Plane mGroundPlane;
@@ -139,10 +141,6 @@ public class C8Session extends MRCommon {
         mEnableCloudAnchor = enableCloudAnchor;
         mGroundPlane = new C8Plane(scene.getSXRContext(), 1, 1);
 
-        mSXRContext.getEventManager().sendEvent(this,
-                IPlaneEvents.class,
-                "onPlaneDetected",
-                mGroundPlane);
 
         mGvrContext = scene.getSXRContext();
         mArPlanes = new HashMap<>();
@@ -164,28 +162,30 @@ public class C8Session extends MRCommon {
 
         Log.d(TAG, "onResumeAR");
 
-        if (mXr == null) {
+        if (xr_ == null) {
           XREngine.create(mSXRContext.getContext(), 1 /* OPENGL */);
-          mXr = XREngine.getInstance();
+          xr_ = XREngine.getInstance();
+          xrAppEnv_ = xr_.getXRAppEnvironmentReader();
 
           XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
           config.getCoordinateConfiguration().getOrigin().getPosition().setY(1.8f);
           config.getCoordinateConfiguration().setAxes(CoordinateSystemConfiguration.CoordinateAxes.X_LEFT_Y_UP_Z_FORWARD);
           config.getCoordinateConfiguration().setScale(1.8f);
-          mXr.configure(config.asReader());
+          xr_.configure(config.asReader());
+          config = new MessageBuilder().getRoot(XRConfiguration.factory);
           /*
-            XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
-            config.getMask().setCamera(true);
-            config.getMask().setFeatureSet(true);
-            config.getGraphicsIntrinsics().setTextureWidth(width);
-            config.getGraphicsIntrinsics().setTextureHeight(height);
-            config.getGraphicsIntrinsics().setNearClip(0.03f);
-            config.getGraphicsIntrinsics().setFarClip(1000.0f);
-            config.getGraphicsIntrinsics().setDigitalZoomVertical(1.0f);
-            config.getGraphicsIntrinsics().setDigitalZoomHorizontal(1.0f);
+          config.getMask().setFeatureSet(true);
+          config.getGraphicsIntrinsics().setTextureWidth(width);
+          config.getGraphicsIntrinsics().setTextureHeight(height);
+          config.getGraphicsIntrinsics().setNearClip(0.03f);
+          config.getGraphicsIntrinsics().setFarClip(1000.0f);
+          config.getGraphicsIntrinsics().setDigitalZoomVertical(1.0f);
+          config.getGraphicsIntrinsics().setDigitalZoomHorizontal(1.0f);
           */
+          xr_.configure(config.asReader());
         }
 
+        /*
         if (mSession == null) {
 
             if (!checkC8AndCamera()) {
@@ -205,14 +205,17 @@ public class C8Session extends MRCommon {
             }
             mSession.configure(mConfig);
         }
+        */
 
         showLoadingMessage();
 
+        /*
         try {
             mSession.resume();
         } catch (CameraNotAvailableException e) {
             e.printStackTrace();
         }
+        */
 
         mSXRContext.runOnGlThread(new Runnable() {
             @Override
@@ -292,11 +295,16 @@ public class C8Session extends MRCommon {
     }
 
     private void onInitC8Session(SXRContext gvrContext) throws CameraNotAvailableException {
+        xr_.resume();
+        mC8Handler = new C8Handler();
+        gvrContext.registerDrawFrameListener(mC8Handler);
+        configDisplayAspectRatio(mSXRContext.getActivity());
+        /*
+
         SXRTexture passThroughTexture = new SXRExternalTexture(gvrContext);
 
         mSession.setCameraTextureName(passThroughTexture.getId());
 
-        configDisplayAspectRatio(mSXRContext.getActivity());
 
         mLastARFrame = mSession.update();
         final SXRCameraRig cameraRig = mVRScene.getMainCameraRig();
@@ -323,8 +331,10 @@ public class C8Session extends MRCommon {
         quadTexCoordTransformed.get(uv);
 
         mesh.setTexCoords(uv);
+        */
 
         /* To render texture from phone's camera */
+        /*
         mARPassThroughObject = new SXRNode(gvrContext, mesh,
                 passThroughTexture, SXRMaterial.SXRShaderType.OES.ID);
 
@@ -334,11 +344,11 @@ public class C8Session extends MRCommon {
         mARPassThroughObject.attachComponent(new SXRMeshCollider(gvrContext, true));
         mARPassThroughObject.setName("ARPassThrough");
         mVRScene.getMainCameraRig().addChildObject(mARPassThroughObject);
-
+        */
         /* AR main loop */
-        mC8Handler = new C8Handler();
-        gvrContext.registerDrawFrameListener(mC8Handler);
+        /*
         syncARCamToVRCam(mLastARFrame.getCamera(), cameraRig);
+        */
         gvrContext.getEventManager().sendEvent(this,
                 IPlaneEvents.class,
                 "onStartPlaneDetection",
@@ -353,6 +363,30 @@ public class C8Session extends MRCommon {
     public class C8Handler implements SXRDrawFrameListener {
         @Override
         public void onDrawFrame(float v) {
+            RealityResponse.Reader r = xr_.getCurrentRealityXRReader();
+            xr_.renderFrameForDisplay();
+
+            if (r.getEventId().getEventTimeMicros() == realityMicros_) {
+                // FIXME: C8 works at 30fps.
+                return;
+            }
+
+            realityMicros_ = r.getEventId().getEventTimeMicros();
+
+            syncARCamToVRCam(r, mVRScene.getMainCameraRig());
+
+            updatePlanes(r, AR2VR_SCALE);
+
+
+            /*
+
+            mSXRContext.getEventManager().sendEvent(this,
+                    IPlaneEvents.class,
+                    "onPlaneDetected",
+                    mGroundPlane);
+                    */
+
+            /*
             try {
                 arFrame = mSession.update();
             } catch (CameraNotAvailableException e) {
@@ -372,7 +406,6 @@ public class C8Session extends MRCommon {
                 return;
             }
 
-            setCamera(arCamera);
 
             syncARCamToVRCam(arCamera, mVRScene.getMainCameraRig());
 
@@ -389,23 +422,82 @@ public class C8Session extends MRCommon {
             updateCloudAnchors(arFrame.getUpdatedAnchors());
 
             mLastARFrame = arFrame;
+            */
         }
     }
 
-    private void syncARCamToVRCam(Camera arCamera, SXRCameraRig cameraRig) {
+    private void syncARCamToVRCam(RealityResponse.Reader r, SXRCameraRig cameraRig) {
+        float w_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getW();
+        float x_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getX();
+        float y_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getY();
+        float z_ = r.getXRResponse().getCamera().getExtrinsic().getRotation().getZ();
+
+        float px = r.getXRResponse().getCamera().getExtrinsic().getRotation().getX();
+        float py = r.getXRResponse().getCamera().getExtrinsic().getRotation().getY();
+        float pz = r.getXRResponse().getCamera().getExtrinsic().getRotation().getZ();
+
         float x = mSXRCamMatrix[12];
         float y = mSXRCamMatrix[13];
         float z = mSXRCamMatrix[14];
 
-        arCamera.getDisplayOrientedPose().toMatrix(mSXRCamMatrix, 0);
+        double wx = w_ * x_;
+        double wy = w_ * y_;
+        double wz = w_ * z_;
+        double xx = x_ * x_;
+        double xy = x_ * y_;
+        double xz = x_ * z_;
+        double yy = y_ * y_;
+        double yz = y_ * z_;
+        double zz = z_ * z_;
 
+        float mm00 = (float)(1.0 - 2.0 * (yy + zz));
+        float mm01 = (float)(2.0000000 * (xy - wz));
+        float mm02 = (float)(2.0000000 * (xz + wy));
+
+        float mm10 = (float)(2.0000000 * (xy + wz));
+        float mm11 = (float)(1.0 - 2.0 * (xx + zz));
+        float mm12 = (float)(2.0000000 * (yz - wx));
+
+        float mm20 = (float)(2.0000000 * (xz - wy));
+        float mm21 = (float)(2.0000000 * (yz + wx));
+        float mm22 = (float)(1.0 - 2.0 * (xx + yy));
+
+        mSXRCamMatrix[0] = mm00;
+        mSXRCamMatrix[1] = mm10;
+        mSXRCamMatrix[2] = mm20;
+        mSXRCamMatrix[3] = 0.0f;
+
+        mSXRCamMatrix[4] = mm01;
+        mSXRCamMatrix[5] = mm11;
+        mSXRCamMatrix[6] = mm21;
+        mSXRCamMatrix[7] = 0.0f;
+
+        mSXRCamMatrix[8] = mm02;
+        mSXRCamMatrix[9] = mm12;
+        mSXRCamMatrix[10] = mm22;
+        mSXRCamMatrix[11] = 0.0f;
+
+        mSXRCamMatrix[12] = px;
+        mSXRCamMatrix[13] = py;
+        mSXRCamMatrix[14] = pz;
+
+        mSXRCamMatrix[15] = 1.0f;
+
+        /*
+        arCamera.getDisplayOrientedPose().toMatrix(mSXRCamMatrix, 0);
+        */
+
+        /*
         // FIXME: This is a workaround because the AR camera's pose is changing its
         // position values even if it is stopped! To avoid the scene looks trembling
         mSXRCamMatrix[12] = (mSXRCamMatrix[12] * AR2VR_SCALE + x) * 0.5f;
         mSXRCamMatrix[13] = (mSXRCamMatrix[13] * AR2VR_SCALE + y) * 0.5f;
         mSXRCamMatrix[14] = (mSXRCamMatrix[14] * AR2VR_SCALE + z) * 0.5f;
+        */
 
         cameraRig.getTransform().setModelMatrix(mSXRCamMatrix);
+
+        mDisplayGeometry = configDisplayGeometry(r, cameraRig);
     }
 
     private void configDisplayAspectRatio(Activity activity) {
@@ -413,17 +505,29 @@ public class C8Session extends MRCommon {
         activity.getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
         mScreenToCamera.x = metrics.widthPixels;
         mScreenToCamera.y = metrics.heightPixels;
-        mSession.setDisplayGeometry(Surface.ROTATION_90, metrics.widthPixels, metrics.heightPixels);
+
+        XRConfiguration.Builder config = new MessageBuilder().getRoot(XRConfiguration.factory);
+        config.getMask().setCamera(true);
+        config.getGraphicsIntrinsics().setTextureWidth(metrics.widthPixels);
+        config.getGraphicsIntrinsics().setTextureHeight(metrics.heightPixels);
+        config.getGraphicsIntrinsics().setNearClip(0.03f);
+        config.getGraphicsIntrinsics().setFarClip(1000.0f);
+        config.getGraphicsIntrinsics().setDigitalZoomVertical(1.0f);
+        config.getGraphicsIntrinsics().setDigitalZoomHorizontal(1.0f);
+        xr_.configure(config.asReader());
     }
 
-    private Vector3f configDisplayGeometry(Camera arCamera, SXRCameraRig cameraRig) {
+    private Vector3f configDisplayGeometry(RealityResponse.Reader r, SXRCameraRig cameraRig) {
         SXRPerspectiveCamera centerCamera = cameraRig.getCenterCamera();
         float near = centerCamera.getNearClippingDistance();
         float far = centerCamera.getFarClippingDistance();
 
         // Get phones' cam projection matrix.
         float[] m = new float[16];
-        arCamera.getProjectionMatrix(m, 0, near, far);
+        for (int i = 0; i < 16; ++i) {
+            m[i] = r.getXRResponse().getCamera().getIntrinsic().getMatrix44f().get(i);
+        }
+
         Matrix4f projmtx = new Matrix4f();
         projmtx.set(m);
 
@@ -471,6 +575,7 @@ public class C8Session extends MRCommon {
 
     @Override
     protected SXRAnchor onCreateAnchor(float[] pose) {
+        /*
         final float[] translation = new float[3];
         final float[] rotation = new float[4];
         final float[] arPose = pose.clone();
@@ -481,10 +586,13 @@ public class C8Session extends MRCommon {
 
         Anchor anchor = mSession.createAnchor(new Pose(translation, rotation));
         return createAnchor(anchor, AR2VR_SCALE);
+        */
+        return null;
     }
 
     @Override
     protected void onUpdateAnchorPose(SXRAnchor anchor, float[] pose) {
+       /*
         final float[] translation = new float[3];
         final float[] rotation = new float[4];
         final float[] arPose = pose.clone();
@@ -495,11 +603,14 @@ public class C8Session extends MRCommon {
 
         Anchor arAnchor = mSession.createAnchor(new Pose(translation, rotation));
         updateAnchorPose((C8Anchor) anchor, arAnchor);
+        */
     }
 
     @Override
     protected void onRemoveAnchor(SXRAnchor anchor) {
+        /*
         removeAnchor((C8Anchor) anchor);
+        */
     }
 
     /**
@@ -508,8 +619,10 @@ public class C8Session extends MRCommon {
      */
     @Override
     synchronized protected void onHostAnchor(SXRAnchor anchor, CloudAnchorCallback cb) {
+        /*
         Anchor newAnchor = mSession.hostCloudAnchor(((C8Anchor) anchor).getAnchorAR());
         pendingAnchors.put(newAnchor, cb);
+        */
     }
 
     /**
@@ -517,14 +630,17 @@ public class C8Session extends MRCommon {
      * available.
      */
     synchronized protected void onResolveCloudAnchor(String anchorId, CloudAnchorCallback cb) {
+        /*
         Anchor newAnchor = mSession.resolveCloudAnchor(anchorId);
         pendingAnchors.put(newAnchor, cb);
+        */
     }
 
     /**
      * Should be called with the updated anchors available after a {@link Session#update()} call.
      */
     synchronized void updateCloudAnchors(Collection<Anchor> updatedAnchors) {
+        /*
         for (Anchor anchor : updatedAnchors) {
             if (pendingAnchors.containsKey(anchor)) {
                 Anchor.CloudAnchorState cloudState = anchor.getCloudAnchorState();
@@ -536,16 +652,21 @@ public class C8Session extends MRCommon {
                 }
             }
         }
+        */
     }
 
     /**
      * Used to clear any currently registered listeners, so they wont be called again.
      */
     synchronized void clearListeners() {
+        /*
         pendingAnchors.clear();
+        */
     }
 
     private static boolean isReturnableState(Anchor.CloudAnchorState cloudState) {
+        return false;
+        /*
         switch (cloudState) {
             case NONE:
             case TASK_IN_PROGRESS:
@@ -553,43 +674,55 @@ public class C8Session extends MRCommon {
             default:
                 return true;
         }
+        */
     }
 
     @Override
     protected void onSetEnableCloudAnchor(boolean enableCloudAnchor) {
+        /*
         mEnableCloudAnchor = enableCloudAnchor;
+        */
     }
 
     @Override
     protected SXRHitResult onHitTest(SXRPicker.SXRPickedObject collision) {
+        return null;
+        /*
         Vector2f tapPosition = convertToDisplayGeometrySpace(collision.hitLocation[0], collision.hitLocation[1]);
         List<HitResult> hitResult = arFrame.hitTest(tapPosition.x, tapPosition.y);
 
         return hitTest(hitResult, AR2VR_SCALE);
+        */
     }
 
     @Override
     protected SXRHitResult onHitTest(float x, float y) {
+        return null;
+        /*
         x *= mScreenToCamera.x;
         y *= mScreenToCamera.y;
         List<HitResult> hitResult = arFrame.hitTest(x, y);
         return hitTest(hitResult, AR2VR_SCALE);
+        */
     }
 
     @Override
     protected SXRLightEstimate onGetLightEstimate() {
-        return getLightEstimate(arFrame.getLightEstimate());
+        return getLightEstimate(); // arFrame.getLightEstimate());
     }
 
     @Override
     protected void onSetMarker(Bitmap image) {
+        /*
         ArrayList<Bitmap> imagesList = new ArrayList<>();
         imagesList.add(image);
         onSetMarkers(imagesList);
+        */
     }
 
     @Override
     protected void onSetMarkers(ArrayList<Bitmap> imagesList) {
+        /*
         AugmentedImageDatabase augmentedImageDatabase = new AugmentedImageDatabase(mSession);
         for (Bitmap image : imagesList) {
             augmentedImageDatabase.addImage("image_name", image);
@@ -597,11 +730,13 @@ public class C8Session extends MRCommon {
 
         mConfig.setAugmentedImageDatabase(augmentedImageDatabase);
         mSession.configure(mConfig);
+        */
     }
 
     @Override
     protected ArrayList<SXRMarker> onGetAllMarkers() {
-        return getAllMarkers();
+        return new ArrayList<SXRMarker>();
+        // return getAllMarkers();
     }
 
     @Override
@@ -656,15 +791,9 @@ public class C8Session extends MRCommon {
         rotation[3] = quaternionRotation.w;
     }
 
-    public void setCamera(Camera camera) {
-        mCamera = camera;
-    }
+    public void updatePlanes(RealityResponse.Reader r, float scale) {
 
-    public Camera getCamera() {
-        return mCamera;
-    }
-
-    public void updatePlanes(Collection<Plane> allPlanes, float scale) {
+        /*
 
         // Don't update planes (or notify) when the plane listener is empty, i.e., there is
         // no listener registered.
@@ -708,9 +837,11 @@ public class C8Session extends MRCommon {
 
             arCorePlane.update(scale);
         }
+        */
     }
 
     public void updateAugmentedImages(Collection<AugmentedImage> allAugmentedImages){
+        /*
         C8Marker arCoreMarker;
 
         for (AugmentedImage augmentedImage: allAugmentedImages) {
@@ -744,9 +875,11 @@ public class C8Session extends MRCommon {
                 notifyMarkerStateChangeListeners(arCoreMarker, SXRTrackingState.STOPPED);
             }
         }
+        */
     }
 
     public void updateAnchors(float scale) {
+        /*
         for (C8Anchor anchor: mArAnchors) {
             Anchor arAnchor = anchor.getAnchorAR();
 
@@ -768,24 +901,29 @@ public class C8Session extends MRCommon {
 
             anchor.update(scale);
         }
+        */
     }
 
     public ArrayList<SXRPlane> getAllPlanes() {
         ArrayList<SXRPlane> allPlanes = new ArrayList<>();
 
+        /*
         for (Plane plane: mArPlanes.keySet()) {
             allPlanes.add(mArPlanes.get(plane));
         }
+        */
 
         return allPlanes;
     }
 
     public ArrayList<SXRMarker> getAllMarkers() {
         ArrayList<SXRMarker> allAugmentedImages = new ArrayList<>();
+        /*
 
         for (AugmentedImage augmentedImage: mArAugmentedImages.keySet()) {
             allAugmentedImages.add(mArAugmentedImages.get(augmentedImage));
         }
+        */
 
         return allAugmentedImages;
     }
@@ -797,34 +935,44 @@ public class C8Session extends MRCommon {
     }
 
     public C8Marker createMarker(AugmentedImage augmentedImage) {
-        C8Marker arCoreMarker = new C8Marker(augmentedImage);
-        return arCoreMarker;
+        return null;
+        // C8Marker arCoreMarker = new C8Marker(augmentedImage);
+        // return arCoreMarker;
     }
 
     public SXRAnchor createAnchor(Anchor arAnchor, float scale) {
+        return null;
+        /*
         C8Anchor arCoreAnchor = new C8Anchor(mGvrContext);
         arCoreAnchor.setAnchorAR(arAnchor);
         mArAnchors.add(arCoreAnchor);
         arCoreAnchor.update(scale);
         return arCoreAnchor;
+        */
     }
 
     public void updateAnchorPose(C8Anchor anchor, Anchor arAnchor) {
+        /*
         if (anchor.getAnchorAR() != null) {
             anchor.getAnchorAR().detach();
         }
         anchor.setAnchorAR(arAnchor);
+        */
     }
 
     public void removeAnchor(C8Anchor anchor) {
+        /*
         anchor.getAnchorAR().detach();
         mArAnchors.remove(anchor);
         SXRNode anchorNode = anchor.getOwnerObject();
         SXRNode anchorParent = anchorNode.getParent();
         anchorParent.removeChildObject(anchorNode);
+        */
     }
 
     public SXRHitResult hitTest(List<HitResult> hitResult, float scale) {
+        return null;
+        /*
         for (HitResult hit : hitResult) {
             // Check if any plane was hit, and if it was hit inside the plane polygon
             Trackable trackable = hit.getTrackable();
@@ -848,6 +996,7 @@ public class C8Session extends MRCommon {
         }
 
         return null;
+        */
     }
 
     /**
@@ -861,14 +1010,12 @@ public class C8Session extends MRCommon {
         poseMatrix[14] = poseMatrix[14] * scale;
     }
 
-    public SXRLightEstimate getLightEstimate(LightEstimate lightEstimate) {
+    public SXRLightEstimate getLightEstimate(/*LightEstimate lightEstimate*/) {
         C8LightEstimate arCoreLightEstimate = new C8LightEstimate();
         SXRLightEstimate.SXRLightEstimateState state;
 
-        arCoreLightEstimate.setPixelIntensity(lightEstimate.getPixelIntensity());
-        state = (lightEstimate.getState() == LightEstimate.State.VALID) ?
-                SXRLightEstimate.SXRLightEstimateState.VALID :
-                SXRLightEstimate.SXRLightEstimateState.NOT_VALID;
+        arCoreLightEstimate.setPixelIntensity(0.5f);// lightEstimate.getPixelIntensity());
+        state = SXRLightEstimate.SXRLightEstimateState.VALID;
         arCoreLightEstimate.setState(state);
 
         return arCoreLightEstimate;
